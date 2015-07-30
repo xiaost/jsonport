@@ -8,11 +8,6 @@ import (
 )
 
 const (
-	maxInt64 = 1<<63 - 1
-	minInt64 = -1 << 63
-)
-
-var (
 	zero = json.Number("0")
 )
 

@@ -12,7 +12,7 @@ package main
 
 import (
     "fmt"
-    "jsonport"
+    "github.com/xiaost/jsonport"
 )
 
 func main() {

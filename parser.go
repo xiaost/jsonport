@@ -174,20 +174,16 @@ func parseString(b []byte) (string, int, error) {
 		return "", 0, fmt.Errorf("STRING: expect '\"' found '%c'", b[0])
 	}
 	var i int
-	var quoted bool
-	for i = 1; i < len(b); i++ {
-		if !quoted && b[i] == '\\' {
-			quoted = true
-			continue
+	var escaped bool
+	for i, c := range b[1:] {
+		if c == '\\' {
+			escaped = !escaped
+		} else if c == '"' && !escaped {
+			s := unquote(b[:i+2])
+			return s, i + 2, nil
+		} else {
+			escaped = false
 		}
-		if !quoted && b[i] == '"' {
-			s, ok := unquote(b[:i+1])
-			if !ok {
-				return "", i, errors.New("STRING: unquote err")
-			}
-			return s, i + 1, nil
-		}
-		quoted = false
 	}
 	return "", i, errStringEOF
 }
@@ -343,10 +339,10 @@ func parseNumber(b []byte) (Number, int, error) {
 		case c == '+':
 		case c == '-':
 		default:
-			return Number(string(b[:i])), i, nil
+			return Number(unsafeString(b[:i])), i, nil
 		}
 	}
-	return Number(string(b[:i])), i, nil
+	return Number(unsafeString(b[:i])), i, nil
 }
 
 func parseBool(b []byte) (bool, int, error) {
@@ -518,15 +514,9 @@ func parseArrayElement(b []byte, index int, keys ...interface{}) (Json, int, err
 
 // unquote converts a quoted JSON string literal s into an actual string t.
 // The rules are different than for Go, so cannot use strconv.Unquote.
-func unquote(s []byte) (t string, ok bool) {
-	s, ok = unquoteBytes(s)
-	t = string(s)
-	return
-}
-
-func unquoteBytes(s []byte) (t []byte, ok bool) {
+func unquote(s []byte) string {
 	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
-		return
+		return ""
 	}
 	s = s[1 : len(s)-1]
 
@@ -550,7 +540,7 @@ func unquoteBytes(s []byte) (t []byte, ok bool) {
 		r += size
 	}
 	if r == len(s) {
-		return s, true
+		return unsafeString(s)
 	}
 
 	b := make([]byte, len(s)+2*utf8.UTFMax)
@@ -568,11 +558,11 @@ func unquoteBytes(s []byte) (t []byte, ok bool) {
 		case c == '\\':
 			r++
 			if r >= len(s) {
-				return
+				return ""
 			}
 			switch s[r] {
 			default:
-				return
+				return ""
 			case '"', '\\', '/', '\'':
 				b[w] = s[r]
 				r++
@@ -601,7 +591,7 @@ func unquoteBytes(s []byte) (t []byte, ok bool) {
 				r--
 				rr := getu4(s[r:])
 				if rr < 0 {
-					return
+					return ""
 				}
 				r += 6
 				if utf16.IsSurrogate(rr) {
@@ -620,7 +610,7 @@ func unquoteBytes(s []byte) (t []byte, ok bool) {
 
 		// Quote, control characters are invalid.
 		case c == '"', c < ' ':
-			return
+			return ""
 
 		// ASCII
 		case c < utf8.RuneSelf:
@@ -635,7 +625,7 @@ func unquoteBytes(s []byte) (t []byte, ok bool) {
 			w += utf8.EncodeRune(b[w:], rr)
 		}
 	}
-	return b[0:w], true
+	return string(b[0:w])
 }
 
 // getu4 decodes \uXXXX from the beginning of s, returning the hex value,
@@ -644,7 +634,7 @@ func getu4(s []byte) rune {
 	if len(s) < 6 || s[0] != '\\' || s[1] != 'u' {
 		return -1
 	}
-	r, err := strconv.ParseUint(string(s[2:6]), 16, 64)
+	r, err := strconv.ParseUint(unsafeString(s[2:6]), 16, 64)
 	if err != nil {
 		return -1
 	}

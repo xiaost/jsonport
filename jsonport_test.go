@@ -140,6 +140,7 @@ func TestJson_Bool(t *testing.T) {
 }
 
 func TestJson_String(t *testing.T) {
+	var err error
 	// simple string
 	in := `"blabla"`
 	j, _ := Unmarshal([]byte(in))
@@ -166,6 +167,31 @@ func TestJson_String(t *testing.T) {
 	}
 	if s, _ := j.String(); s != in {
 		t.Fatal(s)
+	}
+
+	// case escaped string
+	in = `"\""`
+	j, _ = Unmarshal([]byte(in))
+	if s, _ := j.String(); s != `"` {
+		t.Fatal(j.Value())
+	}
+	in = `"\\"`
+	j, _ = Unmarshal([]byte(in))
+	if s, _ := j.String(); s != `\` {
+		t.Fatal(j.Value())
+	}
+	in = `"\\\\""`
+	j, err = Unmarshal([]byte(in))
+	if err != ErrMoreBytes {
+		t.Fatal(err)
+	}
+	if s, _ := j.String(); s != `\\` {
+		t.Fatal(j.Value())
+	}
+	in = `"\\\""`
+	j, _ = Unmarshal([]byte(in))
+	if s, _ := j.String(); s != `\"` {
+		t.Fatal(j.Value())
 	}
 }
 

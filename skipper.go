@@ -131,6 +131,24 @@ func jsonskipArray(b []byte) (int, error) {
 	return i, errors.New("ARRAY")
 }
 
+func skipString(b []byte) (int, error) {
+	if b[0] != '"' {
+		return 0, fmt.Errorf("STRING: expect '\"' found '%c'", b[0])
+	}
+	var i int
+	var escaped bool
+	for i, c := range b[1:] {
+		if c == '\\' {
+			escaped = !escaped
+		} else if c == '"' && !escaped {
+			return i + 2, nil
+		} else {
+			escaped = false
+		}
+	}
+	return i, errStringEOF
+}
+
 func jsonskip(b []byte) (int, error) {
 	i := skipspace(b)
 	b = b[i:]
@@ -144,7 +162,7 @@ func jsonskip(b []byte) (int, error) {
 		return jsonskipArray(b)
 
 	case '"':
-		_, ii, err := parseString(b)
+		ii, err := skipString(b)
 		return i + ii, err
 	case 't', 'f':
 		_, ii, err := parseBool(b)

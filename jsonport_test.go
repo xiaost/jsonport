@@ -1,7 +1,6 @@
 package jsonport
 
 import (
-	"encoding/json"
 	"reflect"
 	"sort"
 	"testing"
@@ -14,8 +13,8 @@ func TestJson_Number(t *testing.T) {
 	if j.Type() != NUMBER {
 		t.Fatal(j.Type())
 	}
-	if intn, _ := j.Int(); intn != int64(10000) {
-		t.Fatal(intn)
+	if intn, err := j.Int(); intn != int64(10000) || err != nil {
+		t.Fatal(intn, err)
 	}
 	if floatn, _ := j.Float(); floatn != float64(10000) {
 		t.Fatal(floatn)
@@ -30,7 +29,7 @@ func TestJson_Number(t *testing.T) {
 		t.Fatal(intn, err)
 	}
 	if floatn, err := j.Float(); floatn != float64(1024.125) {
-		t.Fatal(floatn, err)
+		t.Fatal(j.Value(), err)
 	}
 	// case overflow int64
 	in = []byte(`9223372036000000000000`)
@@ -38,8 +37,8 @@ func TestJson_Number(t *testing.T) {
 	if j.Type() != NUMBER {
 		t.Fatal(j.Type())
 	}
-	if _, err := j.Int(); err == nil {
-		t.Fatal(err)
+	if n, err := j.Int(); err == nil {
+		t.Fatal(n, err)
 	}
 	floatn, _ := j.Float()
 	expfloat := float64(9.223372036e+21)
@@ -186,14 +185,14 @@ func TestJson_Array(t *testing.T) {
 	in := `[1, 2, 3]`
 	j, _ := Unmarshal([]byte(in))
 	if j.Type() != ARRAY {
-		t.Fatal(j.Type())
+		t.Fatal(j.Error())
 	}
 	if n, _ := j.Len(); n != 3 {
 		t.Fatal(n)
 	}
-	narr, _ := j.IntArray()
+	narr, err := j.IntArray()
 	if !reflect.DeepEqual(narr, []int64{1, 2, 3}) {
-		t.Fatal(narr)
+		t.Fatal(narr, err)
 	}
 	farr, _ := j.FloatArray()
 	if !reflect.DeepEqual(farr, []float64{1, 2, 3}) {
@@ -274,7 +273,7 @@ func TestJson_Object(t *testing.T) {
 	in = `{"k1":"v1"}`
 	j, _ = Unmarshal([]byte(in))
 	if j.Type() != OBJECT {
-		t.Fatal(j.Type())
+		t.Fatal(j.Error())
 	}
 	if n, err := j.Len(); n != 1 || err != nil {
 		t.Fatal(n, err)
@@ -327,7 +326,10 @@ func TestJson_Get(t *testing.T) {
 func TestJson_EachOf(t *testing.T) {
 	// case array
 	in := `[{"id": 1}, {"id": 2}, {"id": 3}]`
-	j, _ := Unmarshal([]byte(in))
+	j, err := Unmarshal([]byte(in))
+	if err != nil {
+		t.Fatal(err)
+	}
 	j = j.EachOf("id")
 	if j.Type() != ARRAY {
 		t.Fatal(j.Type())
@@ -364,43 +366,6 @@ func TestJson_EachOf(t *testing.T) {
 	}
 }
 
-func TestJson_New(t *testing.T) {
-	// case NewJson
-	// json.Unmarshal use float64 by default
-	in := `[123, 124]`
-	var out []interface{}
-	json.Unmarshal([]byte(in), &out)
-	j := NewJson(out)
-	if j.Type() != ARRAY {
-		t.Fatal(j.Type())
-	}
-	farr, err := j.FloatArray()
-	if !reflect.DeepEqual(farr, []float64{123, 124}) {
-		t.Fatal(farr, err)
-	}
-	narr, err := j.IntArray()
-	if !reflect.DeepEqual(narr, []int64{123, 124}) {
-		t.Fatal(narr, err)
-	}
-
-	in = `[1e32, 2048]`
-	out = out[:0]
-	json.Unmarshal([]byte(in), &out)
-	j = NewJson(out)
-	if j.Type() != ARRAY {
-		t.Fatal(j.Type())
-	}
-	farr, err = j.FloatArray()
-	if !reflect.DeepEqual(farr, []float64{1e32, 2048}) {
-		t.Fatal(farr, err)
-	}
-	if n, err := j.GetInt(0); err == nil {
-		t.Fatal(n, err)
-	}
-	if n, err := j.GetInt(1); err != nil {
-		t.Fatal(n, err)
-	}
-}
 func TestJson_Mismatch(t *testing.T) {
 	// case simple mismatch
 	in := `123`
@@ -485,16 +450,6 @@ func TestJson_Other(t *testing.T) {
 	if _, err := jj.Bool(); err == nil {
 		t.Fatal(nil)
 	}
-	// case unknown type
-	j.v = 123
-	j.StringAsNumber()
-	if j.Type() != INVALID {
-		t.Fatal(j.Type())
-	}
-	if _, err := j.Float(); err == nil {
-		t.Fatal(nil)
-	}
-
 	// case decode err
 	if _, err := Unmarshal([]byte("!")); err == nil {
 		t.Fatal(nil)

@@ -1,7 +1,6 @@
 package jsonport
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
@@ -54,7 +53,7 @@ func ExampleJson_StringAsNumber() {
 	fmt.Println(n, err)
 	// Output:
 	// Without StringAsNumber():
-	// 0 type mismatch: expected NUMBER, found STRING "1438194274"
+	// 0 type mismatch: expected NUMBER, found STRING
 	// With StringAsNumber():
 	// 1438194274 <nil>
 }
@@ -73,38 +72,8 @@ func ExampleJson_AllAsBool() {
 	fmt.Println(b, err)
 	// Output:
 	// Without AllAsBool():
-	// false type mismatch: expected BOOL, found NUMBER "1"
+	// false type mismatch: expected BOOL, found NUMBER
 	// With AllAsBool():
 	// true <nil>
 
-}
-
-func ExampleNewJson() {
-	jsonstr := `{"key": "score", "value": 99.5}`
-	i := struct {
-		Key   string      `json:"key"`
-		Value interface{} `json:"value"`
-	}{}
-	// using encoding/json
-	json.Unmarshal([]byte(jsonstr), &i)
-	j := NewJson(i.Value)
-	// Output: score
-	fmt.Println(i.Key)
-	// Output: NUMBER 99.5
-	f, _ := j.Float()
-	fmt.Println(j.Type(), f)
-
-	jsonstr = `{"key": "name", "value": "Tom"}`
-	json.Unmarshal([]byte(jsonstr), &i)
-	j = NewJson(i.Value)
-	// Output: name
-	fmt.Println(i.Key)
-	// Output: STRING Tom
-	s, _ := j.String()
-	fmt.Println(j.Type(), s)
-	// Output:
-	// score
-	// NUMBER 99.5
-	// name
-	// STRING Tom
 }

@@ -16,7 +16,7 @@ var (
 	jsonnull  = []byte("null")
 )
 
-func isSpace(b byte) bool {
+func isspace(b byte) bool {
 	switch b {
 	case ' ':
 	case '\t':
@@ -30,24 +30,26 @@ func isSpace(b byte) bool {
 	return true
 }
 
-func skipSpace(b []byte) int {
-	for i := range b {
-		if isSpace(b[i]) {
-			continue
+func skipspace(b []byte) int {
+	for i, c := range b {
+		if !isspace(c) {
+			return i
 		}
-		return i
 	}
 	return len(b)
 }
 
 func parse(b []byte) (Json, int, error) {
-	i := skipSpace(b)
+	i := skipspace(b)
+	b = b[i:]
+	if len(b) == 0 {
+		return Json{}, 0, errJSONEOF
+	}
 
 	var j Json
-	p := b[i:]
-	switch p[0] {
+	switch b[0] {
 	case '{':
-		o, ii, err := parseObject(p)
+		o, ii, err := parseObject(b)
 		if err != nil {
 			j.err = err
 			return j, i, err
@@ -56,7 +58,7 @@ func parse(b []byte) (Json, int, error) {
 		j.v = o
 		j.tp = OBJECT
 	case '[':
-		a, ii, err := parseArray(p)
+		a, ii, err := parseArray(b)
 		if err != nil {
 			j.err = err
 			return j, i, err
@@ -65,7 +67,7 @@ func parse(b []byte) (Json, int, error) {
 		j.v = a
 		j.tp = ARRAY
 	case '"':
-		s, ii, err := parseString(p)
+		s, ii, err := parseString(b)
 		if err != nil {
 			j.err = err
 			return j, i, err
@@ -74,7 +76,7 @@ func parse(b []byte) (Json, int, error) {
 		j.v = s
 		j.tp = STRING
 	case 't', 'f':
-		tf, ii, err := parseBool(p)
+		tf, ii, err := parseBool(b)
 		if err != nil {
 			j.err = err
 			return j, i, err
@@ -83,7 +85,7 @@ func parse(b []byte) (Json, int, error) {
 		j.v = tf
 		j.tp = BOOL
 	case 'n':
-		ii, err := parseNull(p)
+		ii, err := parseNull(b)
 		if err != nil {
 			j.err = err
 			return j, i, err
@@ -92,7 +94,7 @@ func parse(b []byte) (Json, int, error) {
 		j.v = nil
 		j.tp = NULL
 	default:
-		n, ii, err := parseNumber(p)
+		n, ii, err := parseNumber(b)
 		if err != nil {
 			j.err = err
 			return j, i, err
@@ -102,6 +104,69 @@ func parse(b []byte) (Json, int, error) {
 		j.tp = NUMBER
 	}
 	return j, i, nil
+}
+
+func parseMemberName(k interface{}) (string, error) {
+	switch t := k.(type) {
+	case string:
+		return t, nil
+	}
+	return "", errMemberName
+}
+
+func parseArrayIndex(k interface{}) (int, error) {
+	switch t := k.(type) {
+	// reflect.ValueOf(t).Int() or Uint() ?
+	// without reflection here.
+	case int:
+		return t, nil
+	case int8:
+		return int(t), nil
+	case int16:
+		return int(t), nil
+	case int32:
+		return int(t), nil
+	case int64:
+		return int(t), nil
+	case uint:
+		return int(t), nil
+	case uint8:
+		return int(t), nil
+	case uint16:
+		return int(t), nil
+	case uint32:
+		return int(t), nil
+	case uint64:
+		return int(t), nil
+	}
+	return 0, errArrayIndex
+
+}
+
+func parsePath(b []byte, keys ...interface{}) (Json, int, error) {
+	if len(keys) == 0 {
+		return parse(b)
+	}
+
+	i := skipspace(b)
+	b = b[i:]
+	if len(b) == 0 {
+		return Json{}, i, errJSONEOF
+	}
+
+	if name, err := parseMemberName(keys[0]); err == nil {
+		j, ii, err := parseObjectMember(b, name, keys[1:]...)
+		i += ii
+		return j, i, err
+	}
+
+	if index, err := parseArrayIndex(keys[0]); err == nil {
+		j, ii, err := parseArrayElement(b, index, keys[1:]...)
+		i += ii
+		return j, i, err
+	} else {
+		return Json{}, 0, errors.New("key type error")
+	}
 }
 
 func parseString(b []byte) (string, int, error) {
@@ -124,7 +189,7 @@ func parseString(b []byte) (string, int, error) {
 		}
 		quoted = false
 	}
-	return "", i, errors.New("STRING: end of string err")
+	return "", i, errStringEOF
 }
 
 func parseObject(b []byte) (map[string]Json, int, error) {
@@ -154,7 +219,7 @@ func parseObject(b []byte) (map[string]Json, int, error) {
 
 	i := 1 // skip {
 	for i < len(b) {
-		if isSpace(b[i]) {
+		if isspace(b[i]) {
 			i++
 			continue
 		}
@@ -180,7 +245,7 @@ func parseObject(b []byte) (map[string]Json, int, error) {
 		if state == stateMemberValue {
 			j, ii, err := parse(b[i:])
 			if err != nil {
-				return nil, i, fmt.Errorf("OBJECT member.value: %s", err)
+				return nil, i, fmt.Errorf("OBJECT: member %q parse err: %s", k, err)
 			}
 			i += ii
 			m[k] = j
@@ -228,14 +293,14 @@ func parseArray(b []byte) ([]Json, int, error) {
 
 	i := 1 // skip [
 	for i < len(b) {
-		if isSpace(b[i]) {
+		if isspace(b[i]) {
 			i++
 			continue
 		}
 		if state == stateValue {
 			j, ii, err := parse(b[i:])
 			if err != nil {
-				return a, i, fmt.Errorf("ARRAY value: %s", err)
+				return a, i, fmt.Errorf("ARRAY: index %d value: %s", len(a), err)
 			}
 			i += ii
 			a = append(a, j)
@@ -256,12 +321,12 @@ func parseArray(b []byte) ([]Json, int, error) {
 			return nil, i, fmt.Errorf("ARRAY: expect ',' or ']' found '%c'", b[i])
 		}
 	}
-	return nil, i, errors.New("ARRAY: internal err")
+	return nil, i, errArrayEOF
 }
 
 func parseNumber(b []byte) (Number, int, error) {
 	if len(b) == 0 {
-		return zero, 0, errors.New("parse EOF err")
+		return zero, 0, errJSONEOF
 	}
 	c := b[0]
 	if c != '-' && (c < '0' || c > '9') {
@@ -299,6 +364,156 @@ func parseNull(b []byte) (int, error) {
 		return len(jsonnull), nil
 	}
 	return 0, errors.New("NULL: parse err")
+}
+
+func parseObjectMember(b []byte, name string, keys ...interface{}) (Json, int, error) {
+	if len(b) == 0 {
+		return Json{}, 0, errors.New("OBJECT: expect '{' found EOF")
+	}
+	if b[0] != '{' {
+		return Json{}, 0, fmt.Errorf("OBJECT: expect '{' found '%c", b[0])
+	}
+	if len(b) < 2 {
+		return Json{}, 1, errors.New("OBJECT: expect '}' found EOF")
+	}
+	if b[1] == '}' {
+		return Json{tp: NULL}, 2, nil
+	}
+
+	const (
+		stateMemberName  = 1
+		stateColon       = 2
+		stateMemberValue = 3
+		stateDone        = 4
+	)
+	state := stateMemberName
+
+	var k string
+
+	i := 1 // skip {
+	for i < len(b) {
+		if isspace(b[i]) {
+			i++
+			continue
+		}
+		if state == stateMemberName {
+			s, ii, err := parseString(b[i:])
+			if err != nil {
+				return Json{}, i, fmt.Errorf("OBJECT member.name: %s", err)
+			}
+			i += ii
+			k = s
+			state = stateColon
+			continue
+		}
+		if state == stateColon {
+			if b[i] != ':' {
+				return Json{}, i, fmt.Errorf("OBJECT: expect ':' found '%c'", b[i])
+			}
+			i++
+			state = stateMemberValue
+			continue
+		}
+
+		if state == stateMemberValue {
+			if k == name {
+				j, ii, err := parsePath(b[i:], keys...)
+				if err != nil {
+					return j, i, fmt.Errorf("OBJECT member %q parse err: %s", k, err)
+				}
+				return j, i + ii, nil
+			} else {
+				ii, err := jsonskip(b[i:])
+				if err != nil {
+					return Json{}, i, fmt.Errorf("OBJECT member: %q parse err: %s", k, err)
+				}
+				i += ii
+				state = stateDone
+			}
+			continue
+		}
+
+		if state == stateDone {
+			if b[i] == ',' {
+				i++
+				state = stateMemberName
+				continue
+			}
+			if b[i] == '}' {
+				i++
+				return Json{tp: NULL}, i, nil
+			}
+			return Json{}, i, fmt.Errorf("OBJECT: expect ',' or '}' found '%c'", b[i])
+		}
+	}
+	return Json{}, i, errObjectEOF
+}
+
+func parseArrayElement(b []byte, index int, keys ...interface{}) (Json, int, error) {
+	if len(b) == 0 {
+		return Json{}, 0, errors.New("ARRAY: expect '[' found EOF")
+	}
+	if b[0] != '[' {
+		return Json{}, 0, fmt.Errorf("ARRAY: expect '[' found '%c'", b[0])
+	}
+	if len(b) < 2 {
+		return Json{}, 1, errors.New("ARRAY: expect ']' found EOF")
+	}
+	if b[1] == ']' {
+		return Json{}, 2, nil
+	}
+
+	if index < 0 {
+		return Json{tp: NULL}, 0, nil
+	}
+
+	const (
+		stateValue = 1
+		stateDone  = 2
+	)
+	state := stateValue
+
+	pos := 0
+
+	i := 1 // skip [
+	for i < len(b) {
+		if isspace(b[i]) {
+			i++
+			continue
+		}
+		if state == stateValue {
+			if pos != index {
+				ii, err := jsonskip(b[i:])
+				if err != nil {
+					return Json{}, i, fmt.Errorf("ARRAY: index %d err: %s", pos, err)
+				}
+				i += ii
+			} else {
+				j, ii, err := parsePath(b[i:], keys...)
+				if err != nil {
+					return Json{}, i, fmt.Errorf("ARRAY: index %d err: %s", pos, err)
+				}
+				return j, i + ii, nil
+			}
+			pos += 1
+			state = stateDone
+			continue
+		}
+
+		if state == stateDone {
+			if b[i] == ',' {
+				i++
+				state = stateValue
+				continue
+			}
+			if b[i] == ']' {
+				i++
+				return Json{tp: NULL}, i, nil
+			}
+			return Json{}, i, fmt.Errorf("ARRAY: expect ',' or ']' found '%c'", b[i])
+		}
+	}
+	return Json{}, i, errArrayEOF
 }
 
 // unquote converts a quoted JSON string literal s into an actual string t.

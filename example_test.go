@@ -29,14 +29,20 @@ func Example_usage() {
 
 	// convert NUMBER, STRING, ARRAY and OBJECT type to BOOL
 	j.AllAsBool()
-	// Output: true
+	// Output: false
 	fmt.Println(j.GetBool("status"))
+
+	// using Unmarshal with path which can speed up json decode
+	j, _ = Unmarshal([]byte(jsonstr), "users", 1, "name")
+	fmt.Println(j.String())
+
 	// Output:
 	// Tom <nil>
 	// [golang json] <nil>
 	// [Tom Peter]
 	// 1438194274 <nil>
 	// false <nil>
+	// Peter <nil>
 }
 
 func ExampleJson_StringAsNumber() {

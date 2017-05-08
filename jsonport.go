@@ -35,12 +35,17 @@ var (
 )
 
 // Unmarshal parses data to Json
-func Unmarshal(data []byte) (Json, error) {
+// when specified keys, jsonport skips unused field for performance
+func Unmarshal(data []byte, keys ...interface{}) (Json, error) {
+	if len(keys) != 0 {
+		j, _, err := parsePath(data, keys...)
+		return j, err
+	}
 	j, i, err := parse(data)
 	if err != nil {
 		return j, err
 	}
-	n := skipSpace(data[i:])
+	n := skipspace(data[i:])
 	if n+i != len(data) {
 		return j, ErrMoreBytes
 	}

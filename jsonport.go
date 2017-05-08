@@ -34,8 +34,8 @@ var (
 	ErrMoreBytes = errors.New("not all bytes unmarshaled")
 )
 
-// Unmarshal parses data to Json
-// when specified keys, jsonport skips unused field for performance
+// Unmarshal parses data to Json.
+// When specified keys, jsonport skips unused field for performance
 func Unmarshal(data []byte, keys ...interface{}) (Json, error) {
 	if len(keys) != 0 {
 		j, _, err := parsePath(data, keys...)

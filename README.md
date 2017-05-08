@@ -2,7 +2,13 @@
 jsonport [![GoDoc](https://godoc.org/github.com/xiaost/jsonport?status.png)](https://godoc.org/github.com/xiaost/jsonport)
 ====
 
-jsonport is a golang package for accessing json with interface{} (schemaless) inspired by [jmoiron/jsonq](https://github.com/jmoiron/jsonq). Feel free to post issues or PRs, I will reply ASAP :-)
+jsonport is a simple and high performance golang package for accessing json without pain. features:
+* No reflection.
+* Unmarshal without struct.
+* Unmarshal for the given json path only.
+* 2x faster than encoding/json.
+
+It is inspired by [jmoiron/jsonq](https://github.com/jmoiron/jsonq). Feel free to post issues or PRs, I will reply ASAP :-)
 
 
 ## Usage
@@ -61,6 +67,3 @@ func main() {
 ```
 
 For more information on getting started with `jsonport` [check out the doc](https://godoc.org/github.com/xiaost/jsonport)
-
-## Performance
-jsonport ~ 2x faster than encoding/json (~ 5x unmarshal with json path)

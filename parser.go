@@ -49,7 +49,7 @@ func parse(b []byte) (Json, int, error) {
 	var j Json
 	switch b[0] {
 	case '{':
-		o, ii, err := parseObject(b)
+		o, ii, err := parseObject(b, false)
 		if err != nil {
 			j.err = err
 			return j, i, err
@@ -155,6 +155,12 @@ func parsePath(b []byte, keys ...interface{}) (Json, int, error) {
 	}
 
 	if name, err := parseMemberName(keys[0]); err == nil {
+		if name == ParseMemberNamesOnly {
+			o, ii, err := parseObject(b, true)
+			i += ii
+			j := Json{v: o, tp: OBJECT}
+			return j, i, err
+		}
 		j, ii, err := parseObjectMember(b, name, keys[1:]...)
 		i += ii
 		return j, i, err
@@ -188,7 +194,7 @@ func parseString(b []byte) (string, int, error) {
 	return "", i, errStringEOF
 }
 
-func parseObject(b []byte) (map[string]Json, int, error) {
+func parseObject(b []byte, namesonly bool) (map[string]Json, int, error) {
 	if len(b) == 0 {
 		return nil, 0, errors.New("OBJECT: expect '{' found EOF")
 	}
@@ -237,18 +243,23 @@ func parseObject(b []byte) (map[string]Json, int, error) {
 			state = stateMemberValue
 			continue
 		}
-
 		if state == stateMemberValue {
-			j, ii, err := parse(b[i:])
-			if err != nil {
-				return nil, i, fmt.Errorf("OBJECT: member %q parse err: %s", k, err)
+			j := Json{tp: NULL}
+			var ii int
+			var err error
+			if namesonly {
+				ii, err = jsonskip(b[i:])
+			} else {
+				j, ii, err = parse(b[i:])
+				if err != nil {
+					return nil, i, fmt.Errorf("OBJECT: member %q parse err: %s", k, err)
+				}
 			}
 			i += ii
 			m[k] = j
 			state = stateDone
 			continue
 		}
-
 		if state == stateDone {
 			if b[i] == ',' {
 				i++

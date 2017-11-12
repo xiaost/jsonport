@@ -489,3 +489,30 @@ func TestTypes(t *testing.T) {
 		t.Fatal(tt.String())
 	}
 }
+
+func TestParseMemberNames(t *testing.T) {
+	in := `[{
+		"a": [],
+		"b": "",
+		"c": 123
+	}]`
+	j, err := Unmarshal([]byte(in), 0, MemberNamesOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !j.IsObject() {
+		t.Fatal("not obj")
+	}
+	if !j.Member("a").IsNull() {
+		t.Fatal(j.Member("a").Type())
+	}
+	if !j.Member("b").IsNull() {
+		t.Fatal("not null")
+	}
+	if !j.Member("c").IsNull() {
+		t.Fatal("not null")
+	}
+	if ret, _ := j.Keys(); len(ret) != 3 {
+		t.Fatal("keys err")
+	}
+}

@@ -9,6 +9,8 @@ import (
 
 const (
 	zero = Number("0")
+
+	ParseMemberNamesOnly = "__member_names_only__"
 )
 
 // Json represents everything of json
@@ -64,6 +66,30 @@ func DecodeFrom(r io.Reader) (Json, error) {
 // Type returns the Type of current json value
 func (j Json) Type() Type {
 	return j.tp
+}
+
+func (j Json) IsObject() bool {
+	return j.tp == OBJECT
+}
+
+func (j Json) IsNumber() bool {
+	return j.tp == NUMBER
+}
+
+func (j Json) IsArray() bool {
+	return j.tp == ARRAY
+}
+
+func (j Json) IsString() bool {
+	return j.tp == STRING
+}
+
+func (j Json) IsBool() bool {
+	return j.tp == BOOL
+}
+
+func (j Json) IsNull() bool {
+	return j.tp == NULL
 }
 
 /* Value returns interface{} of current json value

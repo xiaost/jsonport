@@ -496,7 +496,7 @@ func TestParseMemberNames(t *testing.T) {
 		"b": "",
 		"c": 123
 	}]`
-	j, err := Unmarshal([]byte(in), 0, MemberNamesOnly)
+	j, err := Unmarshal([]byte(in), 0, ParseMemberNamesOnly)
 	if err != nil {
 		t.Fatal(err)
 	}

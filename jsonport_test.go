@@ -29,7 +29,7 @@ func TestJson_Number(t *testing.T) {
 		t.Fatal(intn, err)
 	}
 	if floatn, err := j.Float(); floatn != float64(1024.125) {
-		t.Fatal(j.Value(), err)
+		t.Fatal(j.Type(), err)
 	}
 	// case overflow int64
 	in = []byte(`9223372036000000000000`)
@@ -52,11 +52,11 @@ func TestJson_Number(t *testing.T) {
 		t.Fatal(j.Type())
 	}
 	j.StringAsNumber()
-	if intn, _ := j.Int(); intn != int64(10000) {
-		t.Fatal(intn)
+	if intn, err := j.Int(); intn != int64(10000) || err != nil {
+		t.Fatal(intn, err)
 	}
-	if floatn, _ := j.Float(); floatn != float64(10000) {
-		t.Fatal(floatn)
+	if floatn, err := j.Float(); floatn != float64(10000) || err != nil {
+		t.Fatal(floatn, err)
 	}
 	// case not a number
 	in = []byte(`"a10000"`)
@@ -173,12 +173,12 @@ func TestJson_String(t *testing.T) {
 	in = `"\""`
 	j, _ = Unmarshal([]byte(in))
 	if s, _ := j.String(); s != `"` {
-		t.Fatal(j.Value())
+		t.Fatal(j.Type())
 	}
 	in = `"\\"`
 	j, _ = Unmarshal([]byte(in))
 	if s, _ := j.String(); s != `\` {
-		t.Fatal(j.Value())
+		t.Fatal(j.Type())
 	}
 	in = `"\\\\""`
 	j, err = Unmarshal([]byte(in))
@@ -186,12 +186,12 @@ func TestJson_String(t *testing.T) {
 		t.Fatal(err)
 	}
 	if s, _ := j.String(); s != `\\` {
-		t.Fatal(j.Value())
+		t.Fatal(j.Type())
 	}
 	in = `"\\\""`
 	j, _ = Unmarshal([]byte(in))
 	if s, _ := j.String(); s != `\"` {
-		t.Fatal(j.Value())
+		t.Fatal(j.Type())
 	}
 }
 
@@ -306,9 +306,6 @@ func TestJson_Object(t *testing.T) {
 	}
 	if keys, err := j.Keys(); len(keys) != 1 || keys[0] != "k1" || err != nil {
 		t.Fatal(keys, err)
-	}
-	if values, err := j.Values(); len(values) != 1 || values[0].v.(string) != "v1" || err != nil {
-		t.Fatal(values, err)
 	}
 	jj := j.Member("k1")
 	if jj.Type() != STRING {
@@ -456,11 +453,8 @@ func TestJson_Other(t *testing.T) {
 	j, _ := Unmarshal([]byte(in))
 	// case key type not support
 	jj := j.Get(j)
-	if jj.Error() == nil {
-		t.Fatal(nil)
-	}
-	if jj.Value() != nil {
-		t.Fatal(jj.Value())
+	if err := jj.Error(); err != errKeyType {
+		t.Fatal(err)
 	}
 	if jj.Type() != INVALID {
 		t.Fatal(jj.Type())
@@ -473,8 +467,8 @@ func TestJson_Other(t *testing.T) {
 		t.Fatal(nil)
 	}
 	jj.AllAsBool()
-	if _, err := jj.Bool(); err == nil {
-		t.Fatal(nil)
+	if b, err := jj.Bool(); err != nil || b {
+		t.Fatal(b, err)
 	}
 	// case decode err
 	if _, err := Unmarshal([]byte("!")); err == nil {
@@ -485,7 +479,7 @@ func TestJson_Other(t *testing.T) {
 
 func TestTypes(t *testing.T) {
 	tt := Type(255)
-	if tt.String() != "UNKNOWN(255)" {
+	if tt.String() != "UNKNOWN" {
 		t.Fatal(tt.String())
 	}
 }
@@ -516,3 +510,19 @@ func TestParseMemberNames(t *testing.T) {
 		t.Fatal("keys err")
 	}
 }
+
+func BenchmarkUnmarshalSmall(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Unmarshal(smallFixture)
+	}
+}
+
+func BenchmarkUnmarshalMedium(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Unmarshal(mediumFixture)
+	}
+}
+
+var smallFixture = []byte(`{"st":1,"sid":486,"tt":"active","gr":0,"uuid":"de305d54-75b4-431b-adb2-eb6b9e546014","ip":"127.0.0.1","ua":"user_agent","tz":-6,"v":1}`)
+
+var mediumFixture = []byte(`{"person":{"id":"d50887ca-a6ce-4e59-b89f-14f0b5d03b03","name":{"fullName":"LeonidBugaev","givenName":"Leonid","familyName":"Bugaev"},"email":"leonsbox@gmail.com","gender":"male","location":"SaintPetersburg,SaintPetersburg,RU","geo":{"city":"SaintPetersburg","state":"SaintPetersburg","country":"Russia","lat":59.9342802,"lng":30.3350986},"bio":"SeniorengineeratGranify.com","site":"http://flickfaver.com","avatar":"https://d1ts43dypk8bqh.cloudfront.net/v1/avatars/d50887ca-a6ce-4e59-b89f-14f0b5d03b03","employment":{"name":"www.latera.ru","title":"SoftwareEngineer","domain":"gmail.com"},"facebook":{"handle":"leonid.bugaev"},"github":{"handle":"buger","id":14009,"avatar":"https://avatars.githubusercontent.com/u/14009?v=3","company":"Granify","blog":"http://leonsbox.com","followers":95,"following":10},"twitter":{"handle":"flickfaver","id":77004410,"bio":null,"followers":2,"following":1,"statuses":5,"favorites":0,"location":"","site":"http://flickfaver.com","avatar":null},"linkedin":{"handle":"in/leonidbugaev"},"googleplus":{"handle":null},"angellist":{"handle":"leonid-bugaev","id":61541,"bio":"SeniorengineeratGranify.com","blog":"http://buger.github.com","site":"http://buger.github.com","followers":41,"avatar":"https://d1qb2nb5cznatu.cloudfront.net/users/61541-medium_jpg?1405474390"},"klout":{"handle":null,"score":null},"foursquare":{"handle":null},"aboutme":{"handle":"leonid.bugaev","bio":null,"avatar":null},"gravatar":{"handle":"buger","urls":[],"avatar":"http://1.gravatar.com/avatar/f7c8edd577d13b8930d5522f28123510","avatars":[{"url":"http://1.gravatar.com/avatar/f7c8edd577d13b8930d5522f28123510","type":"thumbnail"}]},"fuzzy":false},"company":null}`)

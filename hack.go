@@ -2,6 +2,10 @@ package jsonport
 
 import "unsafe"
 
-func unsafeString(b []byte) string {
+func ss(b []byte) string {
 	return *(*string)(unsafe.Pointer(&b))
+}
+
+func nn(b []byte) Number {
+	return *(*Number)(unsafe.Pointer(&b))
 }

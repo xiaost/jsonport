@@ -19,17 +19,29 @@ type Json struct {
 	tob  bool
 	err  error
 
-	/*
-		v is one of:
-			map[string]Json (tp: OBJECT)
-			[]Json			(tp: ARRAY)
-			Number			(tp: NUMBER)
-			string			(tp: STRING)
-			bool			(tp: BOOL)
-			nil				(tp: NULL)
-	*/
-	v  interface{}
 	tp Type
+
+	m []kv   // tp: OBJECT
+	a []Json // tp: ARRAY
+	b []byte // tp: NUMBER or STRING
+	t bool   // tp: BOOL
+}
+
+type kv struct {
+	s string
+	k []byte
+	v Json
+}
+
+func (e *kv) key() string {
+	if len(e.s) != 0 {
+		return e.s
+	}
+	if len(e.k) == 0 {
+		return ""
+	}
+	e.s = unquote(e.k)
+	return e.s
 }
 
 var (
@@ -92,19 +104,6 @@ func (j Json) IsNull() bool {
 	return j.tp == NULL
 }
 
-/* Value returns interface{} of current json value
-Value is one of:
-	map[string]Json (tp: OBJECT)
-	Number			(tp: NUMBER)
-	[]Json			(tp: ARRAY)
-	string			(tp: STRING | NUMBER)
-	bool			(tp: BOOL)
-	nil				(tp: NULL)
-*/
-func (j Json) Value() interface{} {
-	return j.v
-}
-
 // Error returns error of current context
 func (j Json) Error() error {
 	return j.err
@@ -134,22 +133,15 @@ func (j Json) mismatch(t Type) error {
 
 // String converts current json value to string
 func (j Json) String() (string, error) {
-	s, ok := j.v.(string)
-	if ok {
-		return s, nil
+	if j.tp != STRING {
+		return "", j.mismatch(STRING)
 	}
-	return "", j.mismatch(STRING)
+	return unquote(j.b), nil
 }
 
 func (j Json) number() (Number, error) {
-	if n, ok := j.v.(Number); ok {
-		return n, nil
-	}
-	if !j.atoi {
-		return zero, j.mismatch(NUMBER)
-	}
-	if s, ok := j.v.(string); ok {
-		return Number(s), nil
+	if j.tp == NUMBER || (j.atoi && j.tp == STRING) {
+		return nn(j.b), nil
 	}
 	return zero, j.mismatch(NUMBER)
 }
@@ -183,24 +175,21 @@ func (j Json) Int() (int64, error) {
 
 // Bool converts current json value to bool
 func (j Json) Bool() (bool, error) {
-	b, ok := j.v.(bool)
-	if ok {
-		return b, nil
+	if j.tp == BOOL {
+		return j.t, nil
 	}
 	if !j.tob {
 		return false, j.mismatch(BOOL)
 	}
-	switch j.Type() {
+	switch j.tp {
 	case STRING, ARRAY, OBJECT:
 		l, err := j.Len()
 		return l > 0, err
 	case NUMBER:
 		f, err := j.Float()
 		return f != 0, err
-	case NULL:
-		return false, nil
 	}
-	return false, j.mismatch(BOOL)
+	return false, nil
 }
 
 // Len returns the length of json value.
@@ -208,27 +197,26 @@ func (j Json) Bool() (bool, error) {
 //	ARRAY:	the number of elements
 //	OBJECT:	the number of pairs
 func (j Json) Len() (int, error) {
-	switch t := j.v.(type) {
-	case string:
-		return len(t), nil
-	case []Json:
-		return len(t), nil
-	case map[string]Json:
-		return len(t), nil
+	switch j.tp {
+	case STRING:
+		return len(j.b), nil
+	case ARRAY:
+		return len(j.a), nil
+	case OBJECT:
+		return len(j.m), nil
 	}
-	return 0, fmt.Errorf("type %s not supported Len()", j.Type())
+	return 0, errLen
 }
 
 // Keys returns the field names of json object.
 // error is returned if value type not equal to OBJECT.
 func (j Json) Keys() ([]string, error) {
-	m, ok := j.v.(map[string]Json)
-	if !ok {
+	if j.tp != OBJECT {
 		return nil, j.mismatch(OBJECT)
 	}
-	ret := make([]string, 0, len(m))
-	for k := range m {
-		ret = append(ret, k)
+	ret := make([]string, 0, len(j.m))
+	for i := range j.m {
+		ret = append(ret, j.m[i].key())
 	}
 	return ret, nil
 }
@@ -236,13 +224,12 @@ func (j Json) Keys() ([]string, error) {
 // Values returns the field values of json object.
 // error is returned if value type not equal to OBJECT.
 func (j Json) Values() ([]Json, error) {
-	m, ok := j.v.(map[string]Json)
-	if !ok {
+	if j.tp != OBJECT {
 		return nil, j.mismatch(OBJECT)
 	}
-	ret := make([]Json, 0, len(m))
-	for _, v := range m {
-		ret = append(ret, v)
+	ret := make([]Json, 0, len(j.m))
+	for i := range j.m {
+		ret = append(ret, j.returnj(j.m[i].v))
 	}
 	return ret, nil
 }
@@ -251,47 +238,47 @@ func (j Json) Values() ([]Json, error) {
 // a NULL type Json is returned if member not found
 // Json.Error() is set if type not equal to OBJECT
 func (j Json) Member(name string) Json {
-	m, ok := j.v.(map[string]Json)
-	if !ok {
+	if j.tp != OBJECT {
 		return Json{err: j.mismatch(OBJECT)}
 	}
-	v, ok := m[name]
-	if !ok {
-		j.v = nil
-		j.tp = NULL
-	} else {
-		j.v = v.v
-		j.tp = v.tp
+	for i := range j.m {
+		if j.m[i].key() == name {
+			return j.returnj(j.m[i].v)
+		}
 	}
-	return j
+	v := Json{tp: NULL}
+	return j.returnj(v)
 }
 
 // Element returns the (i+1)th element of array.
 // a NULL type Json is returned if index out of range.
 // Json.Error() is set if type not equal to ARRAY.
 func (j Json) Element(i int) Json {
-	arr, ok := j.v.([]Json)
-	if !ok {
+	if j.tp != ARRAY {
 		return Json{err: j.mismatch(ARRAY)}
 	}
-	if i < 0 || i >= len(arr) {
-		j.v = nil
-		j.tp = NULL
+	var v Json
+	if i < 0 || i >= len(j.a) {
+		v.tp = NULL
 	} else {
-		j.v = arr[i].v
-		j.tp = arr[i].tp
+		v = j.a[i]
 	}
-	return j
+	return j.returnj(v)
+}
+
+func (j *Json) returnj(v Json) Json {
+	v.atoi = j.atoi
+	v.tob = j.tob
+	return v
 }
 
 // Array converts current json value to []Json.
 // error is returned if value type not equal to ARRAY.
 func (j Json) Array() ([]Json, error) {
-	arr, ok := j.v.([]Json)
-	if !ok {
+	if j.tp != ARRAY {
 		return nil, j.mismatch(ARRAY)
 	}
-	return arr, nil
+	return j.a, nil
 }
 
 // IntArray converts current json value to []int64.
@@ -402,7 +389,7 @@ func (j Json) Get(keys ...interface{}) Json {
 		case string:
 			j = j.Member(t)
 		default:
-			return Json{err: fmt.Errorf("key type %T not supported", t)}
+			return Json{err: errKeyType}
 		}
 	}
 	return j
@@ -411,25 +398,29 @@ func (j Json) Get(keys ...interface{}) Json {
 // GetBool convert json value specified by keys to bool,
 // it is equal to Get(keys...).Bool()
 func (j Json) GetBool(keys ...interface{}) (bool, error) {
-	return j.Get(keys...).Bool()
+	v := j.Get(keys...)
+	return v.Bool()
 }
 
 // GetString convert json value specified by keys to string,
 // it is equal to Get(keys...).String()
 func (j Json) GetString(keys ...interface{}) (string, error) {
-	return j.Get(keys...).String()
+	v := j.Get(keys...)
+	return v.String()
 }
 
 // GetFloat  convert json value specified by keys to float64,
 // it is equal to Get(keys...).Float()
 func (j Json) GetFloat(keys ...interface{}) (float64, error) {
-	return j.Get(keys...).Float()
+	v := j.Get(keys...)
+	return v.Float()
 }
 
 // GetInt convert json value specified by keys to int64,
 // it is equal to Get(keys...).Int()
 func (j Json) GetInt(keys ...interface{}) (int64, error) {
-	return j.Get(keys...).Int()
+	v := j.Get(keys...)
+	return v.Int()
 }
 
 // EachOf convert every elements specified by keys in json value to ARRAY.
@@ -449,13 +440,15 @@ func (j Json) EachOf(keys ...interface{}) Json {
 	if err != nil {
 		return Json{err: err}
 	}
-	retv := make([]Json, len(arr))
+	var ret Json
+	ret.a = make([]Json, len(arr))
+	ret.tp = ARRAY
 	for i, e := range arr {
-		j := e.Get(keys...)
-		if j.err != nil {
-			return Json{err: j.err}
+		v := e.Get(keys...)
+		if v.err != nil {
+			return Json{err: v.err}
 		}
-		retv[i] = j
+		ret.a[i] = v
 	}
-	return Json{v: retv, tp: ARRAY}
+	return j.returnj(ret)
 }

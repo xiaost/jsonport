@@ -1,7 +1,6 @@
 package jsonport
 
 import (
-	"fmt"
 	"strconv"
 )
 
@@ -34,7 +33,7 @@ func (t Type) String() string {
 	case NULL:
 		return "NULL"
 	}
-	return fmt.Sprintf("UNKNOWN(%d)", t)
+	return "UNKNOWN"
 }
 
 // A Number represents a JSON number literal.

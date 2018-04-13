@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -55,7 +56,7 @@ func parse(b []byte) (Json, int, error) {
 			return j, i, err
 		}
 		i += ii
-		j.v = o
+		j.m = o
 		j.tp = OBJECT
 	case '[':
 		a, ii, err := parseArray(b)
@@ -64,7 +65,7 @@ func parse(b []byte) (Json, int, error) {
 			return j, i, err
 		}
 		i += ii
-		j.v = a
+		j.a = a
 		j.tp = ARRAY
 	case '"':
 		s, ii, err := parseString(b)
@@ -73,7 +74,7 @@ func parse(b []byte) (Json, int, error) {
 			return j, i, err
 		}
 		i += ii
-		j.v = s
+		j.b = s
 		j.tp = STRING
 	case 't', 'f':
 		tf, ii, err := parseBool(b)
@@ -82,7 +83,7 @@ func parse(b []byte) (Json, int, error) {
 			return j, i, err
 		}
 		i += ii
-		j.v = tf
+		j.t = tf
 		j.tp = BOOL
 	case 'n':
 		ii, err := parseNull(b)
@@ -91,7 +92,6 @@ func parse(b []byte) (Json, int, error) {
 			return j, i, err
 		}
 		i += ii
-		j.v = nil
 		j.tp = NULL
 	default:
 		n, ii, err := parseNumber(b)
@@ -100,7 +100,7 @@ func parse(b []byte) (Json, int, error) {
 			return j, i, err
 		}
 		i += ii
-		j.v = n
+		j.b = n
 		j.tp = NUMBER
 	}
 	return j, i, nil
@@ -158,7 +158,7 @@ func parsePath(b []byte, keys ...interface{}) (Json, int, error) {
 		if name == ParseMemberNamesOnly {
 			o, ii, err := parseObject(b, true)
 			i += ii
-			j := Json{v: o, tp: OBJECT}
+			j := Json{m: o, tp: OBJECT}
 			return j, i, err
 		}
 		j, ii, err := parseObjectMember(b, name, keys[1:]...)
@@ -175,9 +175,9 @@ func parsePath(b []byte, keys ...interface{}) (Json, int, error) {
 	}
 }
 
-func parseString(b []byte) (string, int, error) {
+func parseString(b []byte) ([]byte, int, error) {
 	if b[0] != '"' {
-		return "", 0, fmt.Errorf("STRING: expect '\"' found '%c'", b[0])
+		return nil, 0, fmt.Errorf("STRING: expect '\"' found '%c'", b[0])
 	}
 	var i int
 	var escaped bool
@@ -185,16 +185,28 @@ func parseString(b []byte) (string, int, error) {
 		if c == '\\' {
 			escaped = !escaped
 		} else if c == '"' && !escaped {
-			s := unquote(b[:i+2])
+			s := b[1 : i+1] // trim "\""
 			return s, i + 2, nil
 		} else {
 			escaped = false
 		}
 	}
-	return "", i, errStringEOF
+	return nil, i, errStringEOF
 }
 
-func parseObject(b []byte, namesonly bool) (map[string]Json, int, error) {
+var kvspool = sync.Pool{
+	New: func() interface{} {
+		return make([]kv, 0, 4)
+	},
+}
+
+func growkvs(m []kv) []kv {
+	ret := append(make([]kv, 0, 2*cap(m)), m...)
+	kvspool.Put(m[:0])
+	return ret
+}
+
+func parseObject(b []byte, namesonly bool) ([]kv, int, error) {
 	if len(b) == 0 {
 		return nil, 0, errors.New("OBJECT: expect '{' found EOF")
 	}
@@ -205,7 +217,7 @@ func parseObject(b []byte, namesonly bool) (map[string]Json, int, error) {
 		return nil, 1, errors.New("OBJECT: expect '}' found EOF")
 	}
 	if b[1] == '}' {
-		return map[string]Json{}, 2, nil
+		return nil, 2, nil
 	}
 
 	const (
@@ -216,8 +228,8 @@ func parseObject(b []byte, namesonly bool) (map[string]Json, int, error) {
 	)
 	state := stateMemberName
 
-	var m = make(map[string]Json)
-	var k string
+	m := kvspool.Get().([]kv)
+	var k []byte
 
 	i := 1 // skip {
 	for i < len(b) {
@@ -226,12 +238,12 @@ func parseObject(b []byte, namesonly bool) (map[string]Json, int, error) {
 			continue
 		}
 		if state == stateMemberName {
-			s, ii, err := parseString(b[i:])
+			b, ii, err := parseString(b[i:])
 			if err != nil {
 				return nil, i, fmt.Errorf("OBJECT member.name: %s", err)
 			}
 			i += ii
-			k = s
+			k = b
 			state = stateColon
 			continue
 		}
@@ -256,7 +268,10 @@ func parseObject(b []byte, namesonly bool) (map[string]Json, int, error) {
 				}
 			}
 			i += ii
-			m[k] = j
+			if len(m) == cap(m) {
+				m = growkvs(m)
+			}
+			m = append(m, kv{k: k, v: j})
 			state = stateDone
 			continue
 		}
@@ -331,13 +346,13 @@ func parseArray(b []byte) ([]Json, int, error) {
 	return nil, i, errArrayEOF
 }
 
-func parseNumber(b []byte) (Number, int, error) {
+func parseNumber(b []byte) ([]byte, int, error) {
 	if len(b) == 0 {
-		return zero, 0, errJSONEOF
+		return nil, 0, errJSONEOF
 	}
 	c := b[0]
 	if c != '-' && (c < '0' || c > '9') {
-		return zero, 0, errors.New("Unknown type")
+		return nil, 0, errors.New("Unknown type")
 	}
 	var i int
 	for ; i < len(b); i++ {
@@ -350,10 +365,10 @@ func parseNumber(b []byte) (Number, int, error) {
 		case c == '+':
 		case c == '-':
 		default:
-			return Number(unsafeString(b[:i])), i, nil
+			return b[:i], i, nil
 		}
 	}
-	return Number(unsafeString(b[:i])), i, nil
+	return b[:i], i, nil
 }
 
 func parseBool(b []byte) (bool, int, error) {
@@ -409,7 +424,7 @@ func parseObjectMember(b []byte, name string, keys ...interface{}) (Json, int, e
 				return Json{}, i, fmt.Errorf("OBJECT member.name: %s", err)
 			}
 			i += ii
-			k = s
+			k = unquote(s)
 			state = stateColon
 			continue
 		}
@@ -526,11 +541,6 @@ func parseArrayElement(b []byte, index int, keys ...interface{}) (Json, int, err
 // unquote converts a quoted JSON string literal s into an actual string t.
 // The rules are different than for Go, so cannot use strconv.Unquote.
 func unquote(s []byte) string {
-	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
-		return ""
-	}
-	s = s[1 : len(s)-1]
-
 	// Check for unusual characters. If there are none,
 	// then no unquoting is needed, so return a slice of the
 	// original bytes.
@@ -551,7 +561,7 @@ func unquote(s []byte) string {
 		r += size
 	}
 	if r == len(s) {
-		return unsafeString(s)
+		return ss(s)
 	}
 
 	b := make([]byte, len(s)+2*utf8.UTFMax)
@@ -645,7 +655,7 @@ func getu4(s []byte) rune {
 	if len(s) < 6 || s[0] != '\\' || s[1] != 'u' {
 		return -1
 	}
-	r, err := strconv.ParseUint(unsafeString(s[2:6]), 16, 64)
+	r, err := strconv.ParseUint(ss(s[2:6]), 16, 64)
 	if err != nil {
 		return -1
 	}

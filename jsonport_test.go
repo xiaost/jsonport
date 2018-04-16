@@ -512,12 +512,14 @@ func TestParseMemberNames(t *testing.T) {
 }
 
 func BenchmarkUnmarshalSmall(b *testing.B) {
+	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		Unmarshal(smallFixture)
 	}
 }
 
 func BenchmarkUnmarshalMedium(b *testing.B) {
+	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		Unmarshal(mediumFixture)
 	}

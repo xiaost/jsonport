@@ -194,16 +194,14 @@ func parseString(b []byte) ([]byte, int, error) {
 	return nil, i, errStringEOF
 }
 
-var kvspool = sync.Pool{
-	New: func() interface{} {
-		return make([]kv, 0, 4)
-	},
+type obj struct {
+	kvs []kv
 }
 
-func growkvs(m []kv) []kv {
-	ret := append(make([]kv, 0, 2*cap(m)), m...)
-	kvspool.Put(m[:0])
-	return ret
+var opool = sync.Pool{
+	New: func() interface{} {
+		return &obj{kvs: make([]kv, 0, 1000)}
+	},
 }
 
 func parseObject(b []byte, namesonly bool) ([]kv, int, error) {
@@ -228,8 +226,11 @@ func parseObject(b []byte, namesonly bool) ([]kv, int, error) {
 	)
 	state := stateMemberName
 
-	m := kvspool.Get().([]kv)
 	var k []byte
+
+	p := opool.Get().(*obj)
+	defer opool.Put(p)
+	p.kvs = p.kvs[:0]
 
 	i := 1 // skip {
 	for i < len(b) {
@@ -268,10 +269,7 @@ func parseObject(b []byte, namesonly bool) ([]kv, int, error) {
 				}
 			}
 			i += ii
-			if len(m) == cap(m) {
-				m = growkvs(m)
-			}
-			m = append(m, kv{k: k, v: j})
+			p.kvs = append(p.kvs, kv{k: k, v: j})
 			state = stateDone
 			continue
 		}
@@ -283,7 +281,8 @@ func parseObject(b []byte, namesonly bool) ([]kv, int, error) {
 			}
 			if b[i] == '}' {
 				i++
-				return m, i, nil
+				m := make([]kv, 0, len(p.kvs))
+				return append(m, p.kvs...), i, nil
 			}
 			return nil, i, fmt.Errorf("OBJECT: expect ',' or '}' found '%c'", b[i])
 		}

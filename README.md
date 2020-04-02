@@ -17,53 +17,38 @@ It is inspired by [jmoiron/jsonq](https://github.com/jmoiron/jsonq). Feel free t
 package main
 
 import (
-    "fmt"
-    "github.com/xiaost/jsonport"
+	"fmt"
+
+	"github.com/xiaost/jsonport"
 )
 
 func main() {
 	jsonstr := `{
 		"timestamp": "1438194274",
 		"users": [{"id": 1, "name": "Tom"}, {"id": 2, "name": "Peter"}],
-		"keywords": ["golang", "json"]
+		"keywords": ["golang", "json"],
+		"status": 1
 	}`
-	j, _ := Unmarshal([]byte(jsonstr))
+	j, _ := jsonport.Unmarshal([]byte(jsonstr))
 
-	// Output: Tom
-	fmt.Println(j.GetString("users", 0, "name"))
-
-	// Output: [golang json]
-	fmt.Println(j.Get("keywords").StringArray())
-
-	// Output: [Tom Peter]
-	names, _ := j.Get("users").EachOf("name").StringArray()
-	fmt.Println(names)
+	fmt.Println(j.GetString("users", 0, "name"))             // Tom, nil
+	fmt.Println(j.Get("keywords").StringArray())             // [golang json], nil
+	fmt.Println(j.Get("users").EachOf("name").StringArray()) // [Tom Peter],  nil
 
 	// try parse STRING as NUMBER
+	fmt.Println(j.Get("timestamp").Int()) // 0, type mismatch: expected NUMBER, found STRING
 	j.StringAsNumber()
-	// Output: 1438194274
-	fmt.Println(j.Get("timestamp").Int())
+	fmt.Println(j.Get("timestamp").Int()) // 1438194274, nil
 
 	// convert NUMBER, STRING, ARRAY and OBJECT type to BOOL
+	fmt.Println(j.GetBool("status")) // false, type mismatch: expected BOOL, found NUMBER
 	j.AllAsBool()
-	// Output: false
-	fmt.Println(j.GetBool("status"))
+	fmt.Println(j.GetBool("status")) // true, nil
 
 	// using Unmarshal with path which can speed up json decode
-	j, _ = Unmarshal([]byte(jsonstr), "users", 1, "name")
-	fmt.Println(j.String())
-
-	// Output:
-	// Tom <nil>
-	// [golang json] <nil>
-	// [Tom Peter]
-	// 1438194274 <nil>
-	// false <nil>
-	// Peter <nil>
-
+	j, _ = jsonport.Unmarshal([]byte(jsonstr), "users", 1, "name")
+	fmt.Println(j.String()) // Peter, nil
 }
-
-
 ```
 
 For more information on getting started with `jsonport` [check out the doc](https://godoc.org/github.com/xiaost/jsonport)
